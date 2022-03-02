@@ -15,11 +15,10 @@ account: # 账号相关
   uin: 1233456 # QQ账号
   password: '' # 密码为空时使用扫码登录
   encrypt: false  # 是否开启密码加密
-  status: 0      # 在线状态,详情请查看下方的在线状态表
+  status: 0      # 在线状态 请参考 https://docs.go-cqhttp.org/guide/config.html#在线状态
   relogin: # 重连设置
-    disabled: false
-    delay: 3      # 重连延迟, 单位秒
-    interval: 0   # 重连间隔
+    delay: 3   # 首次重连延迟, 单位秒
+    interval: 3   # 重连间隔
     max-times: 0  # 最大重连次数, 0为无限制
 
   # 是否使用服务器下发的新地址进行重连
@@ -27,7 +26,6 @@ account: # 账号相关
   use-sso-address: true
 
 heartbeat:
-  disabled: false # 是否开启心跳事件上报
   # 心跳频率, 单位秒
   # -1 为关闭心跳
   interval: 5
@@ -48,10 +46,20 @@ message:
   proxy-rewrite: ''
   # 是否上报自身消息
   report-self-message: false
+  # 移除服务端的Reply附带的At
+  remove-reply-at: false
+  # 为Reply附加更多信息
+  extra-reply-data: false
+  # 跳过 Mime 扫描, 忽略错误数据
+  skip-mime-scan: false
 
 output:
   # 日志等级 trace,debug,info,warn,error
   log-level: warn
+  # 日志时效 单位天. 超过这个时间之前的日志将会被自动删除. 设置为 0 表示永久保留.
+  log-aging: 15
+  # 是否在每次启动时强制创建全新的文件储存日志. 为 false 的情况下将会在上次启动时创建的日志文件续写
+  log-force-new: true
   # 是否启用 DEBUG
   debug: false # 开启调试模式
 
@@ -71,11 +79,17 @@ default-middlewares: &default
     frequency: 1  # 令牌回复频率, 单位秒
     bucket: 1     # 令牌桶大小
 
+database: # 数据库相关设置
+  leveldb:
+    # 是否启用内置leveldb数据库
+    # 启用将会增加10-20MB的内存占用和一定的磁盘空间
+    # 关闭将无法使用 撤回 回复 get_msg 等上下文相关功能
+    enable: true
+
+# 连接服务列表
 servers:
   # HTTP 通信设置
   - http:
-      # 是否关闭正向HTTP服务器
-      disabled: false
       # 服务端监听地址
       host: 127.0.0.1
       # 服务端监听端口
@@ -94,8 +108,6 @@ servers:
 
   # 正向WS设置
   - ws:
-      # 是否禁用正向WS服务器
-      disabled: true
       # 正向WS服务器监听地址
       host: 127.0.0.1
       # 正向WS服务器监听端口
@@ -104,8 +116,6 @@ servers:
         <<: *default # 引用默认中间件
 
   - ws-reverse:
-      # 是否禁用当前反向WS服务
-      disabled: true
       # 反向WS Universal 地址
       # 注意 设置了此项地址后下面两项将会被忽略
       universal: ws://your_websocket_universal.server
@@ -115,6 +125,20 @@ servers:
       event: ws://your_websocket_event.server
       # 重连间隔 单位毫秒
       reconnect-interval: 3000
+      middlewares:
+        <<: *default # 引用默认中间件
+  # pprof 性能分析服务器, 一般情况下不需要启用.
+  # 如果遇到性能问题请上传报告给开发者处理
+  # 注意: pprof服务不支持中间件、不支持鉴权. 请不要开放到公网
+  - pprof:
+      # pprof服务器监听地址
+      host: 127.0.0.1
+      # pprof服务器监听端口
+      port: 7700
+      
+  # LambdaServer 配置
+  - lambda:
+      type: scf # 可用 scf,aws (aws未经过测试)
       middlewares:
         <<: *default # 引用默认中间件
 
@@ -131,13 +155,27 @@ database: # 数据库相关设置
     enable: true
 ````
 
-> 注: 开启密码加密后程序将在每次启动时要求输入解密密钥, 密钥错误会导致登录时提示密码错误.
+> 注1: 开启密码加密后程序将在每次启动时要求输入解密密钥, 密钥错误会导致登录时提示密码错误.
 > 解密后密码的哈希将储存在内存中，用于自动重连等功能. 所以此加密并不能防止内存读取.
 > 解密密钥在使用完成后并不会留存在内存中, 所以可用相对简单的字符串作为密钥
 
-> 注2: 分片发送为原酷Q发送长消息的老方案, 发送速度更优/兼容性更好，但在有发言频率限制的群里，可能无法发送。关闭后将优先使用新方案, 能发送更长的消息, 但发送速度更慢，在部分老客户端将无法解析.
+> 注2: 对于不需要的通信方式，你可以使用注释将其停用(推荐)，或者添加配置 `disabled: true` 将其关闭
 
-> 注3：关闭心跳服务可能引起断线，请谨慎关闭
+> 注3: 分片发送为原酷Q发送长消息的老方案, 发送速度更优/兼容性更好，但在有发言频率限制的群里，可能无法发送。关闭后将优先使用新方案, 能发送更长的消息, 但发送速度更慢，在部分老客户端将无法解析.
+
+> 注4：关闭心跳服务可能引起断线，请谨慎关闭
+
+> 注5：关于MIME扫描， 详见[MIME](file.md#MIME)
+
+### 环境变量
+
+go-cqhttp 配置文件可以使用占位符来读取**环境变量**的值。
+
+```yaml
+account: # 账号相关
+  uin: ${CQ_UIN} # 读取环境变量 CQ_UIN
+  password: ${CQ_PWD:123456} # 当 CQ_PWD 为空时使用默认值 123456
+```
 
 ## 在线状态
 
@@ -189,6 +227,7 @@ database: # 数据库相关设置
 | 1   | Android Phone | 无                                                               |
 | 2   | Android Watch | 无法接收 `notify` 事件、无法接收口令红包、无法接收撤回消息            |
 | 3   | MacOS         | 无                                                               |
+| 4   | 企点           | 只能登录企点账号或企点子账号                                        |
 
 > 注意, 根据协议的不同, 各类消息有所限制
 
@@ -204,3 +243,14 @@ database: # 数据库相关设置
 1.1.1.1:53
 1.1.2.2:8899
 ````
+
+## 云函数部署
+
+使用CustomRuntime进行部署， bootstrap 文件在 `scripts/bootstrap` 中已给出。
+在部署前，请在本地完成登录，并将 `config.yml` ， `device.json` ，`bootstrap` 和 `go-cqhttp`
+一起打包。
+
+在触发器中创建一个API网关触发器，并启用集成响应，创建完成后即可通过api网关访问go-cqhttp(建议配置 AccessToken)。
+
+> scripts/bootstrap 中使用的工作路径为 /tmp, 这个目录最大能容下500M文件, 如需长期使用，
+> 请挂载文件存储(CFS).

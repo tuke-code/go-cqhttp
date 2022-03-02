@@ -2,14 +2,14 @@ package global
 
 import (
 	"crypto/md5"
-	"fmt"
-	"io/ioutil"
+	"encoding/hex"
+	"os"
 	"os/exec"
 	"path"
 
-	"github.com/Mrs4s/go-cqhttp/global/codec"
-
 	"github.com/pkg/errors"
+
+	"github.com/Mrs4s/go-cqhttp/internal/base"
 )
 
 // EncoderSilk 将音频编码为Silk
@@ -19,11 +19,11 @@ func EncoderSilk(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "calc md5 failed")
 	}
-	tempName := fmt.Sprintf("%x", h.Sum(nil))
+	tempName := hex.EncodeToString(h.Sum(nil))
 	if silkPath := path.Join("data/cache", tempName+".silk"); PathExists(silkPath) {
-		return ioutil.ReadFile(silkPath)
+		return os.ReadFile(silkPath)
 	}
-	slk, err := codec.EncodeToSilk(data, tempName, true)
+	slk, err := base.EncodeSilk(data, tempName)
 	if err != nil {
 		return nil, errors.Wrap(err, "encode silk failed")
 	}
