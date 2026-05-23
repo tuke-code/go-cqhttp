@@ -8,13 +8,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
 // defaultConfig 默认配置文件
+//
 //go:embed default_config.yml
 var defaultConfig string
 
@@ -28,13 +28,28 @@ type Reconnect struct {
 
 // Account 账号配置
 type Account struct {
-	Uin              int64      `yaml:"uin"`
-	Password         string     `yaml:"password"`
-	Encrypt          bool       `yaml:"encrypt"`
-	Status           int        `yaml:"status"`
-	ReLogin          *Reconnect `yaml:"relogin"`
-	UseSSOAddress    bool       `yaml:"use-sso-address"`
-	AllowTempSession bool       `yaml:"allow-temp-session"`
+	Uin                  int64        `yaml:"uin"`
+	Password             string       `yaml:"password"`
+	Encrypt              bool         `yaml:"encrypt"`
+	Status               int          `yaml:"status"`
+	ReLogin              *Reconnect   `yaml:"relogin"`
+	UseSSOAddress        bool         `yaml:"use-sso-address"`
+	AllowTempSession     bool         `yaml:"allow-temp-session"`
+	SignServers          []SignServer `yaml:"sign-servers"`
+	RuleChangeSignServer int          `yaml:"rule-change-sign-server"`
+	MaxCheckCount        uint         `yaml:"max-check-count"`
+	SignServerTimeout    uint         `yaml:"sign-server-timeout"`
+	IsBelow110           bool         `yaml:"is-below-110"`
+	AutoRegister         bool         `yaml:"auto-register"`
+	AutoRefreshToken     bool         `yaml:"auto-refresh-token"`
+	RefreshInterval      int64        `yaml:"refresh-interval"`
+}
+
+// SignServer 签名服务器
+type SignServer struct {
+	URL           string `yaml:"url"`
+	Key           string `yaml:"key"`
+	Authorization string `yaml:"authorization"`
 }
 
 // Config 总配置文件
@@ -55,6 +70,8 @@ type Config struct {
 		RemoveReplyAt       bool   `yaml:"remove-reply-at"`
 		ExtraReplyData      bool   `yaml:"extra-reply-data"`
 		SkipMimeScan        bool   `yaml:"skip-mime-scan"`
+		ConvertWebpImage    bool   `yaml:"convert-webp-image"`
+		HTTPTimeout         int    `yaml:"http-timeout"`
 	} `yaml:"message"`
 
 	Output struct {
@@ -75,18 +92,6 @@ type Server struct {
 	Default string
 }
 
-// LevelDBConfig leveldb 相关配置
-type LevelDBConfig struct {
-	Enable bool `yaml:"enable"`
-}
-
-// MongoDBConfig mongodb 相关配置
-type MongoDBConfig struct {
-	Enable   bool   `yaml:"enable"`
-	URI      string `yaml:"uri"`
-	Database string `yaml:"database"`
-}
-
 // Parse 从默认配置文件路径中获取
 func Parse(path string) *Config {
 	file, err := os.ReadFile(path)
@@ -103,16 +108,11 @@ func Parse(path string) *Config {
 	return config
 }
 
-var (
-	serverconfs []*Server
-	mu          sync.Mutex
-)
+var serverconfs []*Server
 
 // AddServer 添加该服务的简介和默认配置
 func AddServer(s *Server) {
-	mu.Lock()
 	serverconfs = append(serverconfs, s)
-	mu.Unlock()
 }
 
 // generateConfig 生成配置文件
@@ -155,19 +155,11 @@ func expand(s string, mapping func(string) string) string {
 	r := regexp.MustCompile(`\${([a-zA-Z_]+[a-zA-Z0-9_:/.]*)}`)
 	return r.ReplaceAllStringFunc(s, func(s string) string {
 		s = strings.Trim(s, "${}")
-		// todo: use strings.Cut once go1.18 is released
-		before, after, ok := cut(s, ":")
+		before, after, ok := strings.Cut(s, ":")
 		m := mapping(before)
 		if ok && m == "" {
 			return after
 		}
 		return m
 	})
-}
-
-func cut(s, sep string) (before, after string, found bool) {
-	if i := strings.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, "", false
 }
